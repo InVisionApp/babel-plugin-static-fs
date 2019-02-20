@@ -70,13 +70,20 @@ module.exports = function (babel) {
               vars.push(memberParent.node.id.name);
               pathToRemove = memberParent.parentPath;
             } else {
+              // => memberParent === require statement
               t.assertCallExpression(memberParent);
-              throw new Error('Inline CommonJS statements are not yet supported by static-fs');
+              pathToRemove = null;
+              path = memberParent.getSibling(0)
+              vars.push(memberParent.node.callee.property.name);
+              //throw new Error('Inline CommonJS statements are not yet supported by static-fs');
             }
+          } else if (t.isAssignmentExpression(path.parentPath)) {
+            // var fs
+            // fs = require('fs');
+            vars.push(path.parentPath.node.left.name);
           } else {
             throw new Error('Could not statically evaluate how the ' + staticModuleName + ' module was required/imported.');
           }
-
           // now traverse and replace all instances within the scope
           var func = path.getFunctionParent();
           if (!func) {
@@ -85,7 +92,9 @@ module.exports = function (babel) {
           func.traverse(fsApiVisitor(vars, state));
 
           // finally, remove the 'fs' require statements
-          pathToRemove.remove();
+          if (pathToRemove) {
+            pathToRemove.remove();
+          }
         }
       }
     }
@@ -108,7 +117,7 @@ module.exports = function (babel) {
       CallExpression: function (path) {
         var callee = path.node.callee;
         if ((t.isMemberExpression(callee) &&
-              vars.indexOf(callee.object.name) >= 0) ||
+              (vars.indexOf(callee.object.name) >= 0) || (callee.property && vars.indexOf(callee.property.name) >= 0)) ||
             (t.isIdentifier(callee) &&
               vars.indexOf(callee.name) >= 0)) {
           // Ensure new dependencies are emitted back to the bundler.
